@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+PROTOBUF_VERSION="3.0.0"
+"https://github.com/google/protobuf/releases/download/v${PROTOBUF_VERSION}/protobuf-cpp-${PROTOBUF_VERSION}.tar.gz"
+
+function log-step() {
+    echo "-----> " "$@"
+}
+
+function log() {
+    echo "$@" | sed -u 's/^/       /'
+}
+
+function die() {
+    echo " !     " "$@"
+    exit 1
+}
+
+BUILD_DIR=$1
+CACHE_DIR=$2
+
+mkdir -p $CACHE_DIR
+
+if [ "${VENDOR_PROTOBUF+1}" == 1 ]; then
+    # install protobuf into slug if VENDOR_PROTOBUF is set
+    VENDOR_DIR=$BUILD_DIR/.heroku/vendor
+    log-step "installing protobuf into slug's /.heroku/vendor"
+else
+    # otherwise keep it in the cache dir
+    VENDOR_DIR=$CACHE_DIR/.heroku/vendor
+    log-step "installing protobuf"
+fi
+mkdir -p $VENDOR_DIR
+
+mkdir -p /app/.heroku
+
+ln -sTf $VENDOR_DIR /app/.heroku/vendor
+
+# install protobuf
+CACHED_PROTOBUF_TARBALL="$CACHE_DIR/protobuf.tar.gz"
+if [ -z "$PROTOBUF_TARBALL_URL" ]; then
+    PROTOBUF_TARBALL_URL=$PROTOBUF_SRC_URL
+fi
+
+log "downloading protobuf from $PROTOBUF_TARBALL_URL"
+if [ -f $CACHED_PROTOBUF_TARBALL ]; then
+    MD5=($(md5sum $CACHED_PROTOBUF_TARBALL))
+    MD5_HEADER=("-H" "If-None-Match: $MD5")
+else
+    MD5_HEADER=()
+fi
+
+wget $PROTOBUF_TARBALL_URL -O $CACHED_PROTOBUF_TARBALL
+
+log "protobuf cache dir = $CACHE_DIR"
+log "protobuf vendor dir = $VENDOR_DIR"
+
+tar xvf $CACHED_PROTOBUF_TARBALL -C $VENDOR_DIR
+cd "$VENDOR_DIR/protobuf-cpp-${PROTOBUF_VERSION}" && ./configure --prefix=/app/.heroku/vendor && make && make install
